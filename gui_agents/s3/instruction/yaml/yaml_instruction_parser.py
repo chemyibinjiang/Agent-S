@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from instruction.yaml.yaml_instruction import *
+try:
+    from instruction.workflow_schema import *
+except ImportError:
+    from gui_agents.s3.instruction.workflow_schema import *
 
 
 
@@ -28,6 +31,17 @@ def _as_optional_int(value: Any) -> Optional[int]:
         return int(value)
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(value)
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return None
 
@@ -60,6 +74,27 @@ def _parse_images(data: Any) -> Images:
     return Images(
         step_image=_as_optional_str(data.get("step_image")),
         result_image=_as_optional_str(data.get("result_image")),
+    )
+
+
+def _parse_template_matching(data: Any) -> TemplateMatching:
+    if not isinstance(data, dict):
+        return TemplateMatching()
+
+    scales = data.get("scales")
+    parsed_scales: List[float] = []
+    if isinstance(scales, list):
+        for value in scales:
+            scale = _as_optional_float(value)
+            if scale is not None:
+                parsed_scales.append(scale)
+
+    return TemplateMatching(
+        threshold=_as_optional_float(data.get("threshold")),
+        scales=parsed_scales,
+        min_scale=_as_optional_float(data.get("min_scale")),
+        max_scale=_as_optional_float(data.get("max_scale")),
+        scale_step=_as_optional_float(data.get("scale_step")),
     )
 
 
@@ -238,7 +273,7 @@ def _parse_wait_inputs(items: Any) -> List[WaitInput]:
         results.append(
             WaitInput(
                 condition=_as_optional_str(item.get("condition")),
-                timeout_sec=_as_optional_int(item.get("timeout_sec")),
+                timeout_sec=_as_optional_float(item.get("timeout_sec")),
             )
         )
     return results
@@ -252,6 +287,18 @@ def _parse_special_inputs(items: Any) -> List[SpecialInput]:
         if not isinstance(item, dict):
             continue
         results.append(SpecialInput(description=_as_optional_str(item.get("description"))))
+    return results
+
+
+def _parse_screenshot_inputs(items: Any) -> List[ScreenshotInput]:
+    if not isinstance(items, list):
+        return []
+    results: List[ScreenshotInput] = []
+    for item in items:
+        if isinstance(item, dict):
+            results.append(ScreenshotInput(path=_as_optional_str(item.get("path"))))
+        elif item is not None:
+            results.append(ScreenshotInput(path=_as_optional_str(item)))
     return results
 
 
@@ -271,6 +318,7 @@ def _parse_actions(data: Any) -> Optional[Actions]:
         file_input=_parse_file_inputs(data.get("file_input")),
         clipboard_input=_parse_clipboard_inputs(data.get("clipboard_input")),
         wait=_parse_wait_inputs(data.get("wait")),
+        screenshot_input=_parse_screenshot_inputs(data.get("screenshot_input")),
         special=_parse_special_inputs(data.get("special")),
     )
 
@@ -282,12 +330,19 @@ def _parse_step(step_data: Dict[str, Any]) -> Step:
     action = _as_action_list(step_data.get("action"))
     actions = _parse_actions(step_data.get("actions"))
     images = _parse_images(step_data.get("images"))
+    template_matching = _parse_template_matching(step_data.get("template_matching"))
     expected_result = _as_optional_str(step_data.get("expected_result"))
     element_text = _as_optional_str(step_data.get("element_text"))
-    timeout_sec = step_data.get("timeout_sec")
-    pre_processing_delay_millisec = _as_optional_int(step_data.get("pre_processing_delay_millisec"))
-    post_processing_delay_millisec = _as_optional_int(step_data.get("post_processing_delay_millisec"))
-    retry = step_data.get("retry")
+    on_success = _as_optional_str(step_data.get("on_success"))
+    on_failure = _as_optional_str(step_data.get("on_failure"))
+    timeout_sec = _as_optional_float(step_data.get("timeout_sec"))
+    pre_processing_delay_millisec = _as_optional_float(
+        step_data.get("pre_processing_delay_millisec")
+    )
+    post_processing_delay_millisec = _as_optional_float(
+        step_data.get("post_processing_delay_millisec")
+    )
+    retry = _as_optional_int(step_data.get("retry"))
 
     known_keys = {
         "id",
@@ -296,10 +351,13 @@ def _parse_step(step_data: Dict[str, Any]) -> Step:
         "action",
         "actions",
         "images",
+        "template_matching",
         "expected_result",
         "timeout_sec",
         "retry",
         "element_text",
+        "on_success",
+        "on_failure",
         "pre_processing_delay_millisec",
         "post_processing_delay_millisec",
     }
@@ -312,8 +370,11 @@ def _parse_step(step_data: Dict[str, Any]) -> Step:
         action=action,
         actions=actions,
         images=images,
+        template_matching=template_matching,
         expected_result=expected_result,
         element_text=element_text,
+        on_success=on_success,
+        on_failure=on_failure,
         timeout_sec=timeout_sec,
         retry=retry,
         extra=extra,
@@ -329,7 +390,12 @@ def _parse_job(job_data: Dict[str, Any], job_id: str) -> Job:
     if not isinstance(steps_data, list):
         raise InstructionParseError(f"Expected 'steps' to be a list in job '{job_id}'.")
     steps = [_parse_step(step) for step in steps_data]
-    return Job(name=name, runs_on=runs_on, steps=steps)
+    extra = {
+        key: value
+        for key, value in job_data.items()
+        if key not in {"name", "runs-on", "runs_on", "steps"}
+    }
+    return Job(name=name, runs_on=runs_on, steps=steps, extra=extra)
 
 
 def _parse_metadata(data: Dict[str, Any]) -> Metadata:
@@ -352,7 +418,7 @@ def _parse_metadata(data: Dict[str, Any]) -> Metadata:
     )
 
 
-def parse_instruction(data: Dict[str, Any]) -> YamlInstruction:
+def parse_instruction(data: Dict[str, Any]) -> Workflow:
     if not isinstance(data, dict):
         raise InstructionParseError("Instruction YAML must parse into a mapping/object.")
 
@@ -372,19 +438,27 @@ def parse_instruction(data: Dict[str, Any]) -> YamlInstruction:
             raise InstructionParseError(f"Job '{job_id}' must be an object.")
         jobs[job_id] = _parse_job(job_data, job_id)
 
-    return YamlInstruction(name=name, metadata=metadata, on=on_section, jobs=jobs)
+    extra = {
+        key: value
+        for key, value in data.items()
+        if key not in {"name", "metadata", "on", "jobs"}
+    }
+    return Workflow(name=name, metadata=metadata, on=on_section, jobs=jobs, extra=extra)
 
 
-def load_instruction(path: str | Path) -> YamlInstruction:
+def load_instruction(path: str | Path) -> Workflow:
     instruction_path = Path(path)
     with instruction_path.open("r", encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
-    return parse_instruction(raw)
+    workflow = parse_instruction(raw)
+    return resolve_workflow_paths(workflow, instruction_path.parent)
 
 
 __all__ = [
+    "Workflow",
     "YamlInstruction",
     "InstructionParseError",
+    "WorkflowParseError",
     "Job",
     "Metadata",
     "Software",
@@ -400,6 +474,7 @@ __all__ = [
     "FileInput",
     "ClipboardInput",
     "WaitInput",
+    "ScreenshotInput",
     "SpecialInput",
     "Actions",
     "load_instruction",

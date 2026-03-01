@@ -17,11 +17,14 @@ from agents.LegacyACIResult import LegacyACIResult
 from memory.procedural_memory import PROCEDURAL_MEMORY
 from core.mllm import LMMAgent
 from utils.common_utils import RUNTIME_LOG_PATH, call_llm_safe
+from utils.tesseract_utils import configure_pytesseract
 from agents.code_agent import CodeAgent
 import logging
 import json
 
 logger = logging.getLogger("desktopenv.agent")
+
+configure_pytesseract()
 
 feedback_renderer: Optional[Callable[[bytes], bytes]] = None
 

@@ -1,3 +1,6 @@
+# Safe-runner friendly example:
+# - expected_result uses literal UI text that OCR can match
+# - retry: -1 means keep polling until timeout_sec instead of checking only once
 name: "EndNote FindFullText Instruction"
 metadata:
   title: "EndNote 使用指南：FindFullText 功能入门"
@@ -5,7 +8,7 @@ metadata:
     name: "EndNote"
     version: "2024"
   language: "zh-CN"
-  source_markdown: "./example_instruction.md"
+  source_markdown: "../example_instruction.md"
   author: null
   updated_at: null
 
@@ -18,7 +21,7 @@ jobs:
     runs-on: "human-desktop"
     steps:
       - id: step_1_open_app
-        name: "步骤1：打开文件"
+        name: "步骤1：打开 EndNote"
         description: "打开 EndNote 软件，进入主界面。"
         action:
           - "双击桌面上的 EndNote 图标"
@@ -26,11 +29,12 @@ jobs:
         actions: null
         images:
           step_image: null
-          result_image: "./test_images/step1.png"
+          result_image: "../../agents/test_images/step1.png"
         element_text: null
-        expected_result: "进入 EndNote 主界面"
+        on_success: "step_2_click_references"
+        expected_result: "All References"
         timeout_sec: 120
-        retry: 0
+        retry: -1
 
       - id: step_2_click_references
         name: "步骤2：点击References菜单"
@@ -57,12 +61,17 @@ jobs:
           wait: []
           special: []
         images:
-          step_image: "./test_images/step2.png"
-          result_image: "./test_images/step2_r.png"
+          step_image: "../../agents/test_images/step2.png"
+          result_image: "../../agents/test_images/step2_r.png"
+        template_matching:
+          min_scale: 0.9
+          max_scale: 1.1
+          scale_step: 0.05
         element_text: "References"
-        expected_result: "References 下拉菜单出现"
+        on_success: "step_3_find_full_text"
+        expected_result: "Find Full Text"
         timeout_sec: 120
-        retry: 0
+        retry: -1
 
       - id: step_3_find_full_text
         name: "步骤3：在下拉菜单中选择 Find Full Text"
@@ -97,37 +106,46 @@ jobs:
           wait: []
           special: []
         images:
-          step_image: "./test_images/step3.png"
-          result_image: "./test_images/step3_1.png"
+          step_image: "../../agents/test_images/step3.png"
+          result_image: "../../agents/test_images/step3_1.png"
+        template_matching:
+          min_scale: 0.9
+          max_scale: 1.1
+          scale_step: 0.05
         element_text: "Find Full Text"
-        expected_result: "Find Full Text 子菜单出现"
+        on_success: "step_4_check_progress"
+        on_failure: "step_2_click_references"
+        expected_result: "Authenticate"
         timeout_sec: 120
-        retry: 0
+        retry: -1
 
       - id: step_4_check_progress
         name: "步骤4：查看查找进度"
-        description: "观察左侧边栏中的全文查找进度。"
+        description: "等待左侧边栏中的全文查找进度出现。"
         action:
-          - "查看左侧边栏进度状态"
+          - "等待左侧边栏出现 Searching... 状态"
         actions: null
         images:
           step_image: null
-          result_image: "./test_images/step4.png"
+          result_image: "../../agents/test_images/step4.png"
         element_text: null
-        expected_result: "左侧边栏显示查找进度"
+        on_success: "done"
+        expected_result: "Searching..."
         timeout_sec: 120
-        retry: 0
+        retry: -1
 
       - id: done
-        name: "完成"
-        description: "当进度已显示，说明系统正在查找全文。"
+        name: "完成：确认 Searching 状态稳定"
+        description: "再次确认 FIND FULL TEXT 区域中的 Searching... 已稳定出现。"
         action:
-          - "等待查找完成或继续其他操作"
-        actions: null
+          - "额外等待 2 秒后再次确认 Searching... 仍然可见"
+        actions:
+          wait:
+            - timeout_sec: 2
         images:
           step_image: null
-          result_image: null
+          result_image: "../../agents/test_images/step4.png"
         element_text: null
-        expected_result: "查找流程进入后台运行"
-        timeout_sec: 120
-        retry: 0
+        expected_result: "Searching..."
+        timeout_sec: 30
+        retry: -1

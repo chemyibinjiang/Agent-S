@@ -40,7 +40,7 @@ jobs:
           text_input: # 可选，支持多段文本输入
             - text: "<TEXT_TO_TYPE>"
               clear_before: false # 可选，是否先清空输入框
-              input_method: "direct" # direct | ime
+              input_method: "direct" # direct | ime | clipboard
           scroll_input: # 可选
             - direction: "down" # up | down | left | right
               amount: 3 # 滚动单位数量
@@ -68,15 +68,25 @@ jobs:
           wait: # 可选
             - condition: "<WAIT_FOR_CONDITION>" # 如 窗口出现/按钮可点击
               timeout_sec: 30
+          screenshot_input: # 可选
+            - path: "<SCREENSHOT_PATH_OR_DIRECTORY>" # 文件路径或目录；填目录时会自动生成时间戳文件名
           special: # 可选，用自然语言描述特殊操作
             - description: "<SPECIAL_OPERATION_DESCRIPTION>"
         images:
           step_image: "<OPTIONAL_STEP_IMAGE_PATH_OR_NULL>" # 可选，示例：./test_images/step1.png 或 null
           result_image: "<OPTIONAL_RESULT_IMAGE_PATH_OR_NULL>" # 可选，示例：./test_images/step1_result.png 或 null
+        template_matching:
+          threshold: 0.8
+          min_scale: 0.9
+          max_scale: 1.1
+          scale_step: 0.05
+          # scales: [0.9, 1.0, 1.1]
         element_text: "<ELEMENT_TEXT>" # 可选，描述性文本信息，如按钮文字、提示信息等，用于OCR等识别定位
+        on_success: "<NEXT_STEP_ID>" # 可选；成功后跳转到的 step id；不填则默认进入下一个 step
+        on_failure: "<FALLBACK_STEP_ID>" # 可选；失败后跳转到的 step id；不填则 safe runner 直接停止
         pre_processing_delay_millisec: 50 # 可选，执行前等待时间，单位毫秒
         post_processing_delay_millisec: 50 # 可选，执行后等待时间，单位毫秒
-        expected_result: "<EXPECTED_RESULT_TEXT>" # 可选
+        expected_result: "<EXPECTED_RESULT_TEXT>" # 可选；safe runner 中按 OCR 字面匹配，尽量填写界面上会实际出现的文本
         timeout_sec: 120 # 可选
         retry: 0 # 可选
 
@@ -116,7 +126,10 @@ jobs:
 # 2) images.step_image / images.result_image 可填 null 表示无图片。
 # 3) action 为自然语言步骤，actions 为结构化操作描述，可二者并存。
 # 4) 可按需增加/删除 steps，保持 id 唯一且有序。
-# 5) 若需要机器校验，可在每个 step 增加字段：
+# 5) 相对路径会相对于 workflow/yaml 文件所在目录解析。
+# 6) screenshot_input.path 可填写完整文件名，也可填写目录。
+# 7) on_success / on_failure 可用于最小分支控制，值为目标 step 的 id。
+# 8) 若需要机器校验，可在每个 step 增加字段：
 #    - precondition: "<执行前条件>"
 #    - success_criteria: "<成功判定标准>"
 #    - output: "<产出物路径或文本>"
